@@ -1,4 +1,24 @@
-from django.db.models import Model, CharField, DateField, FileField
+# coding=utf-8
+# -*- coding: utf-8 -*-
+# vim: set fileencoding=utf-8 :
+
+"""
+The primary elements of the data model are
+
+    Sheet - represents a sheet (bifolia) in a manuscript
+    
+    Sample - represents a sample collected from a sheet
+    
+    Plate, Well - represents a plate containing 96 sample wells
+    
+    Sequencing - stores the measurement results for a well
+    
+    Result - records the final result for a sample
+"""
+
+
+from django.db.models import Model, CharField, DateField, ImageField, \
+    ForeignKey, IntegerField, TextField
 
 
 class Sheet(Model):
@@ -16,22 +36,19 @@ class Sheet(Model):
 
     # Free text comments about the sheet 
     comments = TextField(null=True, blank=True)
+    
+    class Admin:
+        list_display = ('name',)
 
-
-class Photo(Model):
-    """
-    Associates a photograph with a sheet.
-
-    Photographs can show an entire sheet but are more usually taken with 
-    a microscope and associated with a particular sample.
-    """
-
-    # The sheet (partially) shown in the photograph
-    sheet = ForeignKey(Sheet)
-
-    # The photograph itself, in a format identified by the file extension
-    file = FileField()
-
+    def __eq__(self, other):
+        return self.name == other.name
+    
+    def __hash__(self):
+        return hash(self.name)
+    
+    def __unicode__(self):
+        return self.name
+    
 
 class Session(Model):
     """
@@ -44,6 +61,22 @@ class Session(Model):
     # Free text comments about the session 
     comments = TextField(null=True, blank=True)
 
+    class Admin:
+        list_display = ('date',)
+
+    def _getname(self):
+        return unicode(self.date)
+    name = property(_getname)
+
+    def __eq__(self, other):
+        return self.date == other.date
+    
+    def __hash__(self):
+        return hash(self.date)
+    
+    def __unicode__(self):
+        return self.name
+    
 
 class Sample(Model):
     """
@@ -73,20 +106,34 @@ class Sample(Model):
     # The work session during which the sample was collected 
     session = ForeignKey(Session)
 
-    # A (required) photo of the sample site on the sheet
-    photo = ForeignKey(Photo)
-
     # Free text comments about the sample
     comments = TextField(null=True, blank=True)
 
     class Admin:
-        pass
-
-    def _getname(self):
-        return u'%s-%s-%s' % (self.sheet.name, self.session.name, str(self.pk))
+        list_display = ('name', 'sheet', 'x', 'y',)
 
     # The human-readable identifier for the sample
+    def _getname(self):
+        return u'-'.join((self.sheet.name, self.session.name, str(self.pk)))
     name = property(_getname)
+
+    def __unicode__(self):
+        return self.name
+    
+
+class Photo(Model):
+    """
+    Associates a photograph with a sample site on a sheet.
+    """
+
+    # The sample site shown in the photograph
+    sample = ForeignKey(Sample, edit_inline=True, num_in_admin=1)
+
+    # The photograph itself, in a format identified by the file extension
+    file = ImageField(upload_to='manuscript-dna/photos/', core=True)
+    
+    def __unicode__(self):
+        return self.get_file_url()
 
 
 class Plate(Model):
@@ -97,19 +144,29 @@ class Plate(Model):
     """
     
     # The unique string identifying the plate
-    name = CharField(max_lengh=9, unique=True)
+    name = CharField(max_length=9, unique=True)
 
+    class Admin:
+        list_display = ('name',)
 
-class Primer(Model):
-    """
-    01, 04, DL
+    def __eq__(self, other):
+        return self.name == other.name
+    
+    def __hash__(self):
+        return hash(self.name)
+    
+    def __unicode__(self):
+        return self.name
+    
 
-    """
-    # TODO flesh out the docstring explanation
-   
-    # One of 01, 04 or DL
-    name = CharField(max_length=2, primary_key=True)
-
+WELL_CHOICES = []
+for i in ('A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'):
+    for j in ('01', '02', '03', '04', '05', '06', 
+              '07', '08', '09', '10', '11', '12'):
+        WELL_CHOICES.append((i + j, i + j))
+        
+PRIMER_CHOICES = (('01', '01'), ('04', '04'), ('DL', 'DL'))
+    
 
 class Well(Model):
     """
@@ -124,33 +181,42 @@ class Well(Model):
     """
 
     # The plate that the well belongs to
-    plate = ForeignKey(Plate)
+    plate = ForeignKey(Plate, edit_inline=True, num_in_admin=1)
 
     # The three letter identifier for the well in the plate
-    name = CharField(max_length=3)
+    name = CharField(max_length=3, choices=WELL_CHOICES, core=True)
 
     # The sample stored in the well
     sample = ForeignKey(Sample)
 
-    # The primer used for the sample
-    primer = ForeignKey(Primer)
+    # The primer used for the sample in the well
+    primer = CharField(max_length=2, choices=PRIMER_CHOICES, core=True)
 
     # Free text comments about the well
-    comments = TextField(null=True, blank=True)
-
-    class Admin:
-        pass
+    comments = CharField(max_length=256, null=True, blank=True)
 
     class Meta:
         unique_together = ('plate', 'name')
 
+    def __eq__(self, other):
+        return self.plate == other.plate and self.name == other.name
+    
+    def __hash__(self):
+        return hash(u'-'.join((self.plate.name, self.name)))
+    
+    def __unicode__(self):
+        return self.name
+    
 
 class Sequencing(Model):
     # TODO
 
-    well = ForeignKey(Well)
+    well = ForeignKey(Well, edit_inline=True, num_in_admin=1)
 
-    comments = TextField(null=True, blank=True)
+    comments = TextField(null=True, blank=True, core=True)
+
+    class Admin:
+        pass
 
 
 class Result(Model):
@@ -159,5 +225,8 @@ class Result(Model):
     well = ForeignKey(Well)
 
     comments = TextField(null=True, blank=True)
+
+    class Admin:
+        pass
 
 
